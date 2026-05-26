@@ -30,6 +30,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          REQUIRE_EMAIL: "1"
         run: python job_digest_bot.py
 
       - name: Upload tracker artifact

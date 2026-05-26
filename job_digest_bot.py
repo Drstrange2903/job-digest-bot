@@ -361,7 +361,21 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> bool:
     mail_to = os.getenv("MAIL_TO", PROFILE["email"])
     mail_from = os.getenv("MAIL_FROM", username or PROFILE["email"])
     if not all([host, username, password, mail_to, mail_from]):
-        print("SMTP secrets are not configured; skipping email send.", file=sys.stderr)
+        missing = [
+            name
+            for name, value in {
+                "SMTP_HOST": host,
+                "SMTP_USERNAME": username,
+                "SMTP_PASSWORD": password,
+                "MAIL_TO": mail_to,
+                "MAIL_FROM": mail_from,
+            }.items()
+            if not value
+        ]
+        message = f"SMTP secrets are not configured; missing: {', '.join(missing)}"
+        if os.getenv("REQUIRE_EMAIL") == "1" or os.getenv("GITHUB_ACTIONS") == "true":
+            raise RuntimeError(message)
+        print(message + "; skipping email send.", file=sys.stderr)
         return False
 
     msg = EmailMessage()
