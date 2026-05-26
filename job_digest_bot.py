@@ -355,7 +355,7 @@ def build_email_body(jobs: list[Job]) -> str:
 
 def send_email(subject: str, body: str, attachment: Path | None = None) -> bool:
     host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
+    port = int(os.getenv("SMTP_PORT") or "587")
     username = os.getenv("SMTP_USERNAME")
     password = os.getenv("SMTP_PASSWORD")
     mail_to = os.getenv("MAIL_TO", PROFILE["email"])
