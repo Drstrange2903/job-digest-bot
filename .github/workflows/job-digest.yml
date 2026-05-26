@@ -1,0 +1,40 @@
+name: AI/ML Job Digest
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Test mode: every 10 minutes. After email is confirmed, change to: 0 */2 * * *
+    - cron: "*/10 * * * *"
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run digest
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+        run: python job_digest_bot.py
+
+      - name: Upload tracker artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: job-digest-output
+          path: outputs/*.xlsx
