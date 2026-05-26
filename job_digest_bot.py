@@ -84,7 +84,8 @@ SEEDED_FALLBACK_JOBS = [
 
 
 def norm(value: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(value or "")).strip()
+    value = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", html.unescape(value)).strip()
 
 
 def is_remote(text: str) -> bool:
@@ -187,17 +188,20 @@ def remoteok_jobs() -> list[Job]:
     except Exception:
         return []
     jobs = []
-    for item in data[:80]:
+    for item in data[:50]:
         role = norm(item.get("position", ""))
         company = norm(item.get("company", ""))
         tags = " ".join(item.get("tags") or [])
         snippet = norm(f"{tags} {item.get('description', '')}")[:350]
         blob = f"{role} {company} {tags} {snippet}"
-        if not re.search(r"ai|ml|machine|data|python|llm|nlp|rag|genai", blob, re.I):
+        if not re.search(r"\b(ai|ml|machine learning|data engineer|data scientist|python|llm|nlp|rag|genai)\b", blob, re.I):
+            continue
+        if re.search(r"\b(marketing|sales|recruiter|operations executive|customer support|copywriter|medical scribe)\b", blob, re.I):
             continue
         link = item.get("url") or f"https://remoteok.com/remote-jobs/{item.get('id')}"
         score = score_job(role, company, "Remote", blob)
-        jobs.append(Job(company, role, "Remote", "Remote", "RemoteOK", link, snippet, score, "Check contract/location constraints"))
+        if score >= 60:
+            jobs.append(Job(company, role, "Remote", "Remote", "RemoteOK", link, snippet, score, "Check contract/location constraints"))
     return jobs
 
 
@@ -349,7 +353,7 @@ def build_email_body(jobs: list[Job]) -> str:
     return "\n".join(lines)
 
 
-def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
+def send_email(subject: str, body: str, attachment: Path | None = None) -> bool:
     host = os.getenv("SMTP_HOST")
     port = int(os.getenv("SMTP_PORT", "587"))
     username = os.getenv("SMTP_USERNAME")
@@ -358,7 +362,7 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
     mail_from = os.getenv("MAIL_FROM", username or PROFILE["email"])
     if not all([host, username, password, mail_to, mail_from]):
         print("SMTP secrets are not configured; skipping email send.", file=sys.stderr)
-        return
+        return False
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -377,6 +381,7 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
         smtp.starttls()
         smtp.login(username, password)
         smtp.send_message(msg)
+    return True
 
 
 def main() -> int:
@@ -386,9 +391,18 @@ def main() -> int:
     build_workbook(jobs, output)
     body = build_email_body(jobs)
     subject = f"AI/ML Job Digest - {now.strftime('%Y-%m-%d %H:%M UTC')}"
-    print(body)
-    print(f"\nExcel tracker: {output}")
-    send_email(subject, body, output)
+    print(f"Prepared {len(jobs)} jobs.")
+    for idx, job in enumerate(jobs[:8], start=1):
+        print(f"{idx}. {job.company} - {job.role} [{job.score}] {job.link}")
+    print(f"Excel tracker: {output}")
+    try:
+        if send_email(subject, body, output):
+            print("Email sent successfully.")
+        else:
+            print("Email not sent because SMTP secrets are missing.")
+    except Exception as exc:
+        print(f"EMAIL_SEND_FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+        raise
     return 0
 
 
