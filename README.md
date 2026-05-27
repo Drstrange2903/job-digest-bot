@@ -7,6 +7,7 @@ This repo runs a scheduled job-search digest for Vraj Patel.
 - Searches public job sources, browser-rendered Naukri search result pages, and useful search URLs for AI/ML, GenAI, RAG, LLM, Data Scientist, and Data Engineer roles.
 - Filters for preferred locations: Bangalore/Bengaluru, Pune, Hyderabad, Mumbai, or Remote/Hybrid.
 - Excludes Ahmedabad, Vadodara, Gurgaon/Gurugram, and Noida unless the role is fully remote.
+- Balances each digest around 5 AI/ML/GenAI, 5 Data Engineer, and 5 Data Scientist matches.
 - Builds an Excel tracker.
 - Emails the digest and tracker attachment.
 - Remembers already-sent job links between scheduled runs, so it does not keep emailing the same jobs.
@@ -20,8 +21,18 @@ The GitHub bot uses public Naukri search pages based on the same preferences:
 - AI ML Engineer Python LLM
 - Generative AI Engineer RAG Python
 - Machine Learning Engineer Python
+- LLM Engineer LangChain RAG
+- NLP Engineer Python LLM
+- Data Engineer Python SQL
+- Data Engineer ETL Python SQL
+- Data Engineer AWS Python SQL
+- Data Engineer Spark Python
+- Data Engineer AI Python SQL
 - Data Scientist Python Machine Learning
-- Data Engineer Python SQL AI
+- Data Scientist NLP Python
+- Data Scientist LLM Python
+- Data Scientist SQL Python
+- Machine Learning Data Scientist Python
 
 ## GitHub Actions Schedule
 

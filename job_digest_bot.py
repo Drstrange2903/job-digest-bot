@@ -60,6 +60,30 @@ KEYWORDS = [
 PREFERRED_LOCATIONS = ["bangalore", "bengaluru", "pune", "hyderabad", "mumbai", "remote", "hybrid", "india"]
 EXCLUDED_LOCATIONS = ["ahmedabad", "vadodara", "gurgaon", "gurugram", "noida"]
 
+JOB_GROUPS = {
+    "AI/ML": [
+        "AI ML Engineer Python LLM",
+        "Generative AI Engineer RAG Python",
+        "Machine Learning Engineer Python",
+        "LLM Engineer LangChain RAG",
+        "NLP Engineer Python LLM",
+    ],
+    "Data Engineer": [
+        "Data Engineer Python SQL",
+        "Data Engineer ETL Python SQL",
+        "Data Engineer AWS Python SQL",
+        "Data Engineer Spark Python",
+        "Data Engineer AI Python SQL",
+    ],
+    "Data Scientist": [
+        "Data Scientist Python Machine Learning",
+        "Data Scientist NLP Python",
+        "Data Scientist LLM Python",
+        "Data Scientist SQL Python",
+        "Machine Learning Data Scientist Python",
+    ],
+}
+
 
 @dataclass
 class Job:
@@ -119,6 +143,15 @@ def score_job(role: str, company: str, location: str, snippet: str) -> int:
     if any(x in blob for x in EXCLUDED_LOCATIONS) and not is_remote(blob):
         score -= 100
     return max(0, min(score, 100))
+
+
+def job_group(job: Job) -> str:
+    blob = f"{job.role} {job.snippet}".lower()
+    if re.search(r"\b(data engineer|etl|data pipeline|data warehouse|spark|airflow|bigquery|databricks)\b", blob):
+        return "Data Engineer"
+    if re.search(r"\b(data scientist|statistical|analytics|predictive model|forecasting|experiment|a/b)\b", blob):
+        return "Data Scientist"
+    return "AI/ML"
 
 
 def ddg_search(query: str, max_results: int = 8) -> list[Job]:
@@ -251,13 +284,6 @@ def parse_naukri_html(html_text: str, max_per_search: int) -> list[Job]:
 
 
 def naukri_jobs(max_per_search: int = 4) -> list[Job]:
-    searches = [
-        "AI ML Engineer Python LLM",
-        "Generative AI Engineer RAG Python",
-        "Machine Learning Engineer Python",
-        "Data Scientist Python Machine Learning",
-        "Data Engineer Python SQL AI",
-    ]
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -266,17 +292,18 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
     }
     jobs: list[Job] = []
     urls: list[tuple[str, str]] = []
-    for query in searches:
-        slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")
-        urls.append(
-            (
-                query,
-                f"https://www.naukri.com/{slug}-jobs"
-                f"?k={quote_plus(query)}"
-                "&l=Bangalore%2FBengaluru%2C%20Pune%2C%20Hyderabad%2C%20Mumbai%2C%20Remote"
-                "&experience=2&jobAge=7",
+    for queries in JOB_GROUPS.values():
+        for query in queries:
+            slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")
+            urls.append(
+                (
+                    query,
+                    f"https://www.naukri.com/{slug}-jobs"
+                    f"?k={quote_plus(query)}"
+                    "&l=Bangalore%2FBengaluru%2C%20Pune%2C%20Hyderabad%2C%20Mumbai%2C%20Remote"
+                    "&experience=2&jobAge=7",
+                )
             )
-        )
     try:
         from playwright.sync_api import sync_playwright
 
@@ -317,7 +344,7 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
                     next_action="Open Naukri search and review new listings",
                 )
             )
-    return dedupe(jobs)
+    return dedupe(jobs, limit=60)
 
 
 def collect_jobs() -> list[Job]:
@@ -325,23 +352,36 @@ def collect_jobs() -> list[Job]:
         '"Generative AI Engineer" RAG Python 2-4 years Bangalore OR Bengaluru OR Pune OR Hyderabad OR Mumbai',
         '"AI/ML Engineer" Python LLM RAG Bangalore OR Pune OR Hyderabad OR Mumbai',
         '"Machine Learning Engineer" Python "2-4 years" Bengaluru OR Pune OR Hyderabad OR Mumbai',
-        '"Data Engineer" Python SQL "2-4 years" Bengaluru OR Pune OR Hyderabad OR Mumbai AI',
+        '"LLM Engineer" LangChain RAG Python Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"NLP Engineer" Python LLM Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Engineer" Python SQL "2-4 years" Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Engineer" ETL Python SQL Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Engineer" Spark Python Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Scientist" Python Machine Learning "2-4 years" Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Scientist" NLP Python Bengaluru OR Pune OR Hyderabad OR Mumbai',
+        '"Data Scientist" SQL Python Bengaluru OR Pune OR Hyderabad OR Mumbai',
         'site:foundit.in/job "Generative AI Engineer" "2-4" Hyderabad OR Pune OR Bengaluru',
+        'site:foundit.in/job "Data Engineer" Python SQL Hyderabad OR Pune OR Bengaluru OR Mumbai',
+        'site:foundit.in/job "Data Scientist" Python Hyderabad OR Pune OR Bengaluru OR Mumbai',
         'site:hirist.tech "Generative AI Engineer" RAG Python Bangalore Pune Hyderabad Mumbai',
+        'site:hirist.tech "Data Engineer" Python SQL Bangalore Pune Hyderabad Mumbai',
+        'site:hirist.tech "Data Scientist" Python Bangalore Pune Hyderabad Mumbai',
         'site:linkedin.com/jobs "Generative AI Engineer" RAG Python India',
+        'site:linkedin.com/jobs "Data Engineer" Python SQL India',
+        'site:linkedin.com/jobs "Data Scientist" Python India',
     ]
     jobs = []
     for q in queries:
         jobs.extend(ddg_search(q, max_results=5))
     jobs.extend(naukri_jobs())
     jobs.extend(remoteok_jobs())
-    collected = dedupe(jobs)
-    if os.getenv("INCLUDE_FALLBACK_JOBS") == "1" and len(collected) < 8:
-        collected = dedupe([*collected, *SEEDED_FALLBACK_JOBS])
+    collected = balanced_jobs(dedupe(jobs, limit=100), per_group=5)
+    if os.getenv("INCLUDE_FALLBACK_JOBS") == "1" and len(collected) < 15:
+        collected = balanced_jobs(dedupe([*collected, *SEEDED_FALLBACK_JOBS], limit=100), per_group=5)
     return collected
 
 
-def dedupe(jobs: Iterable[Job]) -> list[Job]:
+def dedupe(jobs: Iterable[Job], limit: int | None = 15) -> list[Job]:
     seen = set()
     output = []
     for job in sorted(jobs, key=lambda j: j.score, reverse=True):
@@ -351,7 +391,42 @@ def dedupe(jobs: Iterable[Job]) -> list[Job]:
         seen.add(key)
         if job.score >= 45:
             output.append(job)
-    return output[:15]
+    return output[:limit] if limit is not None else output
+
+
+def balanced_jobs(jobs: Iterable[Job], per_group: int = 5) -> list[Job]:
+    buckets = {group: [] for group in JOB_GROUPS}
+    extras = []
+    for job in jobs:
+        group = job_group(job)
+        if group in buckets:
+            buckets[group].append(job)
+        else:
+            extras.append(job)
+
+    selected: list[Job] = []
+    selected_keys = set()
+    for group in JOB_GROUPS:
+        for job in buckets[group][:per_group]:
+            key = job_key(job)
+            if key not in selected_keys:
+                selected.append(job)
+                selected_keys.add(key)
+
+    target_total = per_group * len(JOB_GROUPS)
+    leftovers = [
+        job
+        for group in JOB_GROUPS
+        for job in buckets[group][per_group:]
+        if job_key(job) not in selected_keys
+    ]
+    leftovers.extend(job for job in extras if job_key(job) not in selected_keys)
+    for job in sorted(leftovers, key=lambda j: j.score, reverse=True):
+        if len(selected) >= target_total:
+            break
+        selected.append(job)
+        selected_keys.add(job_key(job))
+    return selected
 
 
 def job_key(job: Job) -> str:
@@ -410,6 +485,7 @@ def build_workbook(jobs: list[Job], output_path: Path) -> None:
     headers = [
         "Status",
         "Priority",
+        "Category",
         "Score",
         "Company",
         "Role",
@@ -427,6 +503,7 @@ def build_workbook(jobs: list[Job], output_path: Path) -> None:
         ws.append([
             "To Review",
             idx,
+            job_group(job),
             job.score,
             job.company,
             job.role,
@@ -444,14 +521,14 @@ def build_workbook(jobs: list[Job], output_path: Path) -> None:
         cell.fill = header_fill
         cell.font = Font(color="FFFFFF", bold=True)
         cell.alignment = Alignment(wrap_text=True)
-    widths = [14, 10, 8, 24, 42, 26, 14, 14, 60, 60, 30, 15, 15]
+    widths = [14, 10, 18, 8, 24, 42, 26, 14, 14, 60, 60, 30, 15, 15]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + i)].width = width
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
     if jobs:
-        tab = Table(displayName="JobsTracker", ref=f"A1:M{len(jobs)+1}")
+        tab = Table(displayName="JobsTracker", ref=f"A1:N{len(jobs)+1}")
         tab.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
         ws.add_table(tab)
     ws.freeze_panes = "A2"
@@ -496,6 +573,7 @@ def build_email_body(jobs: list[Job], total_found: int = 0, skipped_seen: int = 
     for idx, job in enumerate(jobs[:12], start=1):
         lines.extend([
             f"{idx}. {job.company} - {job.role}",
+            f"Category: {job_group(job)}",
             f"Location/mode: {job.location} / {job.mode or 'Check listing'}",
             f"Score: {job.score}",
             f"Link: {job.link}",
