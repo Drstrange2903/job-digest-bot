@@ -265,14 +265,17 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
         )
     }
     jobs: list[Job] = []
-    urls = []
+    urls: list[tuple[str, str]] = []
     for query in searches:
         slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")
         urls.append(
-            f"https://www.naukri.com/{slug}-jobs"
-            f"?k={quote_plus(query)}"
-            "&l=Bangalore%2FBengaluru%2C%20Pune%2C%20Hyderabad%2C%20Mumbai%2C%20Remote"
-            "&experience=2&jobAge=7"
+            (
+                query,
+                f"https://www.naukri.com/{slug}-jobs"
+                f"?k={quote_plus(query)}"
+                "&l=Bangalore%2FBengaluru%2C%20Pune%2C%20Hyderabad%2C%20Mumbai%2C%20Remote"
+                "&experience=2&jobAge=7",
+            )
         )
     try:
         from playwright.sync_api import sync_playwright
@@ -280,7 +283,7 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page(user_agent=headers["User-Agent"])
-            for url in urls:
+            for _, url in urls:
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_timeout(5000)
@@ -289,13 +292,31 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
                     continue
             browser.close()
     except Exception:
-        for url in urls:
+        for _, url in urls:
             try:
                 res = requests.get(url, headers=headers, timeout=20)
                 res.raise_for_status()
             except Exception:
                 continue
             jobs.extend(parse_naukri_html(res.text, max_per_search))
+    if not jobs:
+        for query, url in urls:
+            jobs.append(
+                Job(
+                    company="Naukri",
+                    role=f"Naukri search: {query}",
+                    location="Bengaluru, Pune, Hyderabad, Mumbai, Remote",
+                    mode="Search",
+                    source="Naukri",
+                    link=url,
+                    snippet=(
+                        "Open this saved-preference Naukri search while logged in to see fresh matching jobs, "
+                        "recruiter/application details, and Neo recommendations."
+                    ),
+                    score=58,
+                    next_action="Open Naukri search and review new listings",
+                )
+            )
     return dedupe(jobs)
 
 
