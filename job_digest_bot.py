@@ -21,11 +21,13 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 PROFILE = {
     "name": "Vraj Patel",
-    "email": "pvraj1094@gmail.com",
+    "email": "patelvraj09876@gmail.com",
     "experience": "2.5 years",
     "salary": "INR 14-16 LPA negotiable",
     "notice": "Immediate",
 }
+
+SMTP_ACCOUNT = "patelvraj09876@gmail.com"
 
 TARGET_TITLES = [
     "AI/ML Engineer",
@@ -354,12 +356,12 @@ def build_email_body(jobs: list[Job]) -> str:
 
 
 def send_email(subject: str, body: str, attachment: Path | None = None) -> bool:
-    host = os.getenv("SMTP_HOST")
+    host = os.getenv("SMTP_HOST") or "smtp.gmail.com"
     port = int(os.getenv("SMTP_PORT") or "587")
-    username = os.getenv("SMTP_USERNAME")
+    username = os.getenv("SMTP_USERNAME") or SMTP_ACCOUNT
     password = os.getenv("SMTP_PASSWORD")
-    mail_to = os.getenv("MAIL_TO", PROFILE["email"])
-    mail_from = os.getenv("MAIL_FROM", username or PROFILE["email"])
+    mail_to = os.getenv("MAIL_TO") or SMTP_ACCOUNT
+    mail_from = os.getenv("MAIL_FROM") or username or SMTP_ACCOUNT
     if not all([host, username, password, mail_to, mail_from]):
         missing = [
             name

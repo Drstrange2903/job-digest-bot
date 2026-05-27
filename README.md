@@ -30,12 +30,13 @@ to every 2 hours:
 
 Set these in GitHub repo settings:
 
-- `SMTP_HOST`: usually `smtp.gmail.com`
-- `SMTP_PORT`: usually `587`
-- `SMTP_USERNAME`: Gmail address, e.g. `pvraj1094@gmail.com`
-- `SMTP_PASSWORD`: Gmail app password, not the normal Gmail password
-- `MAIL_TO`: recipient email, e.g. `pvraj1094@gmail.com`
-- `MAIL_FROM`: sender email, e.g. `pvraj1094@gmail.com`
+- `SMTP_PASSWORD`: Gmail app password for `patelvraj09876@gmail.com`, not the normal Gmail password
+
+The workflow is currently hardcoded to send from and to:
+
+```text
+patelvraj09876@gmail.com
+```
 
 ## Manual Local Run
 
