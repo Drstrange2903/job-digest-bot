@@ -3,8 +3,8 @@ name: AI/ML Job Digest
 on:
   workflow_dispatch:
   schedule:
-    # Test mode: every 10 minutes. After email is confirmed, change to: 0 */2 * * *
-    - cron: "*/10 * * * *"
+    # Production mode: every 2 hours.
+    - cron: "0 */2 * * *"
 
 jobs:
   digest:
