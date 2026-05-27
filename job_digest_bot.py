@@ -459,12 +459,14 @@ def filter_new_jobs(jobs: list[Job], seen: dict[str, dict[str, str]]) -> list[Jo
                 "role": seed.role,
                 "first_seen": "seeded-before-dedup",
             })
-    return [job for job in jobs if job_key(job) not in seen]
+    return [job for job in jobs if is_live_search_link(job) or job_key(job) not in seen]
 
 
 def remember_jobs(jobs: list[Job], seen: dict[str, dict[str, str]], now: dt.datetime) -> dict[str, dict[str, str]]:
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     for job in jobs:
+        if is_live_search_link(job):
+            continue
         seen[job_key(job)] = {
             "company": job.company,
             "role": job.role,
@@ -476,6 +478,10 @@ def remember_jobs(jobs: list[Job], seen: dict[str, dict[str, str]], now: dt.date
         }
     # Keep the cache bounded.
     return dict(list(seen.items())[-500:])
+
+
+def is_live_search_link(job: Job) -> bool:
+    return job.source == "Naukri" and job.role.startswith("Naukri search:")
 
 
 def build_workbook(jobs: list[Job], output_path: Path) -> None:
