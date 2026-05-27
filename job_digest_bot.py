@@ -208,6 +208,97 @@ def remoteok_jobs() -> list[Job]:
     return jobs
 
 
+def parse_naukri_html(html_text: str, max_per_search: int) -> list[Job]:
+    soup = BeautifulSoup(html_text, "html.parser")
+    jobs: list[Job] = []
+    found = 0
+    for link_el in soup.select('a[href*="job-listings"]'):
+        link = link_el.get("href") or ""
+        role = norm(link_el.get_text(" "))
+        if not link or not role:
+            continue
+        card = link_el.find_parent(["article", "div", "li"])
+        text = norm(card.get_text(" ") if card else role)
+        if not text or not is_allowed_location(text):
+            continue
+        if re.search(r"\b(sales|marketing|recruiter|support|business development)\b", text, re.I):
+            continue
+        company = infer_company(role, link)
+        company_el = card.select_one(".comp-name, .subTitle, .companyInfo") if card else None
+        if company_el:
+            company = norm(company_el.get_text(" "))[:80]
+        location = infer_location(text)
+        mode = "Remote" if is_remote(text) else ("Hybrid" if "hybrid" in text.lower() else "")
+        score = score_job(role, company, location, text)
+        if score >= 55:
+            jobs.append(
+                Job(
+                    company=company,
+                    role=role,
+                    location=location,
+                    mode=mode,
+                    source="Naukri",
+                    link=link,
+                    snippet=text[:350],
+                    score=score,
+                    next_action="Open Naukri listing and apply/reach recruiter",
+                )
+            )
+            found += 1
+        if found >= max_per_search:
+            break
+    return jobs
+
+
+def naukri_jobs(max_per_search: int = 4) -> list[Job]:
+    searches = [
+        "AI ML Engineer Python LLM",
+        "Generative AI Engineer RAG Python",
+        "Machine Learning Engineer Python",
+        "Data Scientist Python Machine Learning",
+        "Data Engineer Python SQL AI",
+    ]
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
+        )
+    }
+    jobs: list[Job] = []
+    urls = []
+    for query in searches:
+        slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")
+        urls.append(
+            f"https://www.naukri.com/{slug}-jobs"
+            f"?k={quote_plus(query)}"
+            "&l=Bangalore%2FBengaluru%2C%20Pune%2C%20Hyderabad%2C%20Mumbai%2C%20Remote"
+            "&experience=2&jobAge=7"
+        )
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            page = browser.new_page(user_agent=headers["User-Agent"])
+            for url in urls:
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(5000)
+                    jobs.extend(parse_naukri_html(page.content(), max_per_search))
+                except Exception:
+                    continue
+            browser.close()
+    except Exception:
+        for url in urls:
+            try:
+                res = requests.get(url, headers=headers, timeout=20)
+                res.raise_for_status()
+            except Exception:
+                continue
+            jobs.extend(parse_naukri_html(res.text, max_per_search))
+    return dedupe(jobs)
+
+
 def collect_jobs() -> list[Job]:
     queries = [
         '"Generative AI Engineer" RAG Python 2-4 years Bangalore OR Bengaluru OR Pune OR Hyderabad OR Mumbai',
@@ -221,6 +312,7 @@ def collect_jobs() -> list[Job]:
     jobs = []
     for q in queries:
         jobs.extend(ddg_search(q, max_results=5))
+    jobs.extend(naukri_jobs())
     jobs.extend(remoteok_jobs())
     collected = dedupe(jobs)
     if os.getenv("INCLUDE_FALLBACK_JOBS") == "1" and len(collected) < 8:
