@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
 import os
 import re
 import smtplib
@@ -222,7 +223,7 @@ def collect_jobs() -> list[Job]:
         jobs.extend(ddg_search(q, max_results=5))
     jobs.extend(remoteok_jobs())
     collected = dedupe(jobs)
-    if len(collected) < 8:
+    if os.getenv("INCLUDE_FALLBACK_JOBS") == "1" and len(collected) < 8:
         collected = dedupe([*collected, *SEEDED_FALLBACK_JOBS])
     return collected
 
@@ -238,6 +239,55 @@ def dedupe(jobs: Iterable[Job]) -> list[Job]:
         if job.score >= 45:
             output.append(job)
     return output[:15]
+
+
+def job_key(job: Job) -> str:
+    link = re.sub(r"[?#].*$", "", job.link).strip().lower()
+    return link or f"{job.company}|{job.role}|{job.location}".lower()
+
+
+def load_seen(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
+
+def save_seen(path: Path, seen: dict[str, dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(seen, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def filter_new_jobs(jobs: list[Job], seen: dict[str, dict[str, str]]) -> list[Job]:
+    if os.getenv("INCLUDE_FALLBACK_JOBS") != "1":
+        for seed in SEEDED_FALLBACK_JOBS:
+            seen.setdefault(job_key(seed), {
+                "company": seed.company,
+                "role": seed.role,
+                "first_seen": "seeded-before-dedup",
+            })
+    return [job for job in jobs if job_key(job) not in seen]
+
+
+def remember_jobs(jobs: list[Job], seen: dict[str, dict[str, str]], now: dt.datetime) -> dict[str, dict[str, str]]:
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for job in jobs:
+        seen[job_key(job)] = {
+            "company": job.company,
+            "role": job.role,
+            "location": job.location,
+            "source": job.source,
+            "link": job.link,
+            "first_seen": seen.get(job_key(job), {}).get("first_seen", stamp),
+            "last_sent": stamp,
+        }
+    # Keep the cache bounded.
+    return dict(list(seen.items())[-500:])
 
 
 def build_workbook(jobs: list[Job], output_path: Path) -> None:
@@ -314,13 +364,15 @@ def build_workbook(jobs: list[Job], output_path: Path) -> None:
     wb.save(output_path)
 
 
-def build_email_body(jobs: list[Job]) -> str:
+def build_email_body(jobs: list[Job], total_found: int = 0, skipped_seen: int = 0) -> str:
     today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     if not jobs:
         return (
             f"AI/ML Job Digest - {today}\n\n"
-            "No strong new public matches were found in this run.\n\n"
-            "Revisit the saved tracker and LinkedIn Easy Apply shortlist."
+            "No new public matches were found in this run.\n\n"
+            f"Checked matches: {total_found}\n"
+            f"Skipped already-sent matches: {skipped_seen}\n\n"
+            "The bot will keep checking every 2 hours and will send fresh matches when it finds them."
         )
     lines = [
         f"AI/ML Job Digest - {today}",
@@ -401,18 +453,25 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> bool:
 
 
 def main() -> int:
-    jobs = collect_jobs()
     now = dt.datetime.now(dt.UTC)
+    seen_path = Path(os.getenv("SEEN_JOBS_FILE", ".cache/seen_jobs.json"))
+    seen = load_seen(seen_path)
+    all_jobs = collect_jobs()
+    jobs = filter_new_jobs(all_jobs, seen)
+    skipped_seen = max(0, len(all_jobs) - len(jobs))
     output = Path("outputs") / f"vraj_job_digest_{now.strftime('%Y%m%d_%H%M')}.xlsx"
     build_workbook(jobs, output)
-    body = build_email_body(jobs)
-    subject = f"AI/ML Job Digest - {now.strftime('%Y-%m-%d %H:%M UTC')}"
-    print(f"Prepared {len(jobs)} jobs.")
+    body = build_email_body(jobs, total_found=len(all_jobs), skipped_seen=skipped_seen)
+    status = "New matches" if jobs else "No new matches"
+    subject = f"AI/ML Job Digest - {status} - {now.strftime('%Y-%m-%d %H:%M UTC')}"
+    print(f"Found {len(all_jobs)} jobs; prepared {len(jobs)} new jobs; skipped {skipped_seen} already seen.")
     for idx, job in enumerate(jobs[:8], start=1):
         print(f"{idx}. {job.company} - {job.role} [{job.score}] {job.link}")
     print(f"Excel tracker: {output}")
     try:
         if send_email(subject, body, output):
+            seen = remember_jobs(jobs, seen, now)
+            save_seen(seen_path, seen)
             print("Email sent successfully.")
         else:
             print("Email not sent because SMTP secrets are missing.")

@@ -9,18 +9,11 @@ This repo runs a scheduled job-search digest for Vraj Patel.
 - Excludes Ahmedabad, Vadodara, Gurgaon/Gurugram, and Noida unless the role is fully remote.
 - Builds an Excel tracker.
 - Emails the digest and tracker attachment.
+- Remembers already-sent job links between scheduled runs, so it does not keep emailing the same jobs.
 
 ## GitHub Actions Schedule
 
-Current test schedule: every 10 minutes.
-
-After confirming email delivery, change `.github/workflows/job-digest.yml` from:
-
-```yaml
-- cron: "*/10 * * * *"
-```
-
-to every 2 hours:
+Current production schedule:
 
 ```yaml
 - cron: "0 */2 * * *"
