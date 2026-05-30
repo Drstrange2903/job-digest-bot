@@ -347,6 +347,33 @@ def naukri_jobs(max_per_search: int = 4) -> list[Job]:
     return dedupe(jobs, limit=60)
 
 
+def linkedin_jobs() -> list[Job]:
+    jobs: list[Job] = []
+    for queries in JOB_GROUPS.values():
+        for query in queries:
+            url = (
+                "https://www.linkedin.com/jobs/search/"
+                f"?f_TPR=r604800&f_WT=2%2C3&keywords={quote_plus(query)}&location=India"
+            )
+            jobs.append(
+                Job(
+                    company="LinkedIn",
+                    role=f"LinkedIn search: {query}",
+                    location="India / Remote / Hybrid",
+                    mode="Search",
+                    source="LinkedIn",
+                    link=url,
+                    snippet=(
+                        "Open this LinkedIn search while logged in to see recent jobs, Easy Apply roles, "
+                        "recruiter/company context, and saved-alert results."
+                    ),
+                    score=59,
+                    next_action="Open LinkedIn search and review recent listings",
+                )
+            )
+    return jobs
+
+
 def collect_jobs() -> list[Job]:
     queries = [
         '"Generative AI Engineer" RAG Python 2-4 years Bangalore OR Bengaluru OR Pune OR Hyderabad OR Mumbai',
@@ -373,6 +400,7 @@ def collect_jobs() -> list[Job]:
     jobs = []
     for q in queries:
         jobs.extend(ddg_search(q, max_results=5))
+    jobs.extend(linkedin_jobs())
     jobs.extend(naukri_jobs())
     jobs.extend(remoteok_jobs())
     collected = balanced_jobs(dedupe(jobs, limit=100), per_group=5)
@@ -385,7 +413,7 @@ def dedupe(jobs: Iterable[Job], limit: int | None = 15) -> list[Job]:
     seen = set()
     output = []
     for job in sorted(jobs, key=lambda j: j.score, reverse=True):
-        key = re.sub(r"[?#].*$", "", job.link).lower()
+        key = job_key(job)
         if key in seen:
             continue
         seen.add(key)
@@ -407,11 +435,26 @@ def balanced_jobs(jobs: Iterable[Job], per_group: int = 5) -> list[Job]:
     selected: list[Job] = []
     selected_keys = set()
     for group in JOB_GROUPS:
+        group_selected = 0
+        for source in ["LinkedIn", "Naukri"]:
+            for job in [j for j in buckets[group] if j.source == source][:2]:
+                key = job_key(job)
+                if key not in selected_keys:
+                    selected.append(job)
+                    selected_keys.add(key)
+                    group_selected += 1
+                if group_selected >= per_group:
+                    break
+            if group_selected >= per_group:
+                break
         for job in buckets[group][:per_group]:
+            if group_selected >= per_group:
+                break
             key = job_key(job)
             if key not in selected_keys:
                 selected.append(job)
                 selected_keys.add(key)
+                group_selected += 1
 
     target_total = per_group * len(JOB_GROUPS)
     leftovers = [
@@ -430,7 +473,9 @@ def balanced_jobs(jobs: Iterable[Job], per_group: int = 5) -> list[Job]:
 
 
 def job_key(job: Job) -> str:
-    link = re.sub(r"[?#].*$", "", job.link).strip().lower()
+    link = job.link.strip().lower()
+    if not is_live_search_link(job):
+        link = re.sub(r"[?#].*$", "", link)
     return link or f"{job.company}|{job.role}|{job.location}".lower()
 
 
@@ -481,7 +526,7 @@ def remember_jobs(jobs: list[Job], seen: dict[str, dict[str, str]], now: dt.date
 
 
 def is_live_search_link(job: Job) -> bool:
-    return job.source == "Naukri" and job.role.startswith("Naukri search:")
+    return job.source in {"LinkedIn", "Naukri"} and job.role.startswith(f"{job.source} search:")
 
 
 def build_workbook(jobs: list[Job], output_path: Path) -> None:
